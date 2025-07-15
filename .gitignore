@@ -28,3 +28,5 @@ ENV/
 .Trashes
 ehthumbs.db
 Thumbs.db
+CLAUDE.md
+bot_logic_documentation.md
