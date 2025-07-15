@@ -74,9 +74,9 @@ class ArbitrageLogicEngine:
         try:
             # Get basic ticker data
             spot_price = await self.api_client.get_spot_price(symbol)
-            futures_data = await self.api_client.get_futures_data(symbol)
+            futures_price = await self.api_client.get_futures_price(symbol)
             
-            if not spot_price or not futures_data:
+            if not spot_price or not futures_price:
                 return {'is_liquid': False, 'reason': 'Missing price data'}
             
             # Simple check - assume sufficient liquidity if we have current prices
@@ -84,7 +84,7 @@ class ArbitrageLogicEngine:
             return {
                 'is_liquid': True,
                 'spot_price': spot_price,
-                'futures_price': futures_data.get('mark_price', 0),
+                'futures_price': futures_price,
                 'estimated_liquidity': config.MIN_LIQUIDITY_QUOTE  # Simplified
             }
             
@@ -173,6 +173,16 @@ class ArbitrageLogicEngine:
                         opportunities.append(cached_opp)
                     continue
                 
+                # Log current market data for debugging
+                spot_price = await self.api_client.get_spot_price(symbol)
+                futures_data = await self.api_client.get_futures_data(symbol)
+                funding_rate = await self.api_client.get_funding_rate(symbol)
+                
+                logger.info(f"🔍 Scanning {symbol}:")
+                logger.info(f"  📊 Spot Price: {spot_price}")
+                logger.info(f"  📈 Futures Data: {futures_data}")
+                logger.info(f"  📊 Funding Rate: {funding_rate}")
+                
                 # Analyze opportunity
                 opportunity = await self.analyze_symbol_opportunity(symbol)
                 
@@ -187,6 +197,10 @@ class ArbitrageLogicEngine:
                 
                 if opportunity.get('is_profitable'):
                     opportunities.append(opportunity)
+                    logger.info(f"💰 Found profitable opportunity for {symbol}: {opportunity.get('expected_apr', 0):.2%} APR")
+                    logger.info(f"  💰 Opportunity Details: {opportunity}")
+                else:
+                    logger.info(f"❌ No profitable opportunity found for {symbol}")
                     
             except Exception as e:
                 logger.error(f"Error analyzing {symbol}: {e}")
@@ -202,17 +216,20 @@ class ArbitrageLogicEngine:
         try:
             # Get current data
             spot_price = await self.api_client.get_spot_price(symbol)
-            futures_data = await self.api_client.get_futures_data(symbol)
+            futures_price = await self.api_client.get_futures_price(symbol)
             funding_rate = await self.api_client.get_funding_rate(symbol)
             
-            if not all([spot_price, futures_data, funding_rate is not None]):
+            if not all([spot_price, futures_price, funding_rate is not None]):
                 return {
                     'symbol': symbol,
                     'is_profitable': False,
-                    'reason': 'Missing market data'
+                    'reason': 'Missing market data',
+                    'debug': {
+                        'spot_price': spot_price,
+                        'futures_price': futures_price,
+                        'funding_rate': funding_rate
+                    }
                 }
-            
-            futures_price = futures_data.get('mark_price', 0)
             
             # Calculate time to next funding
             now = datetime.now()
@@ -272,7 +289,7 @@ class ArbitrageLogicEngine:
             if not spot_price or not futures_data:
                 return {'error': 'Missing price data'}
             
-            futures_price = futures_data.get('mark_price', 0)
+            futures_price = futures_data.get('price', futures_data) if isinstance(futures_data, dict) else futures_data
             
             # Simple position sizing
             spot_quantity = target_amount / spot_price
@@ -308,7 +325,8 @@ class ArbitrageLogicEngine:
             original_futures = opportunity['futures_price']
             
             spot_change = abs(current_spot - original_spot) / original_spot
-            futures_change = abs(current_futures_data['mark_price'] - original_futures) / original_futures
+            current_futures_price = current_futures_data.get('price', current_futures_data) if isinstance(current_futures_data, dict) else current_futures_data
+            futures_change = abs(current_futures_price - original_futures) / original_futures
             
             if spot_change > config.MAX_SLIPPAGE_PERCENT / 100 or futures_change > config.MAX_SLIPPAGE_PERCENT / 100:
                 logger.warning(f"Price moved too much for {symbol}: spot={spot_change:.2%}, futures={futures_change:.2%}")

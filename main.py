@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import time
 import json
 from datetime import datetime, timedelta
@@ -368,13 +369,53 @@ class ArbitrageBot:
             'positions': [asdict(pos) for pos in self.active_positions.values()]
         }
 
+def setup_logging():
+    """Configure logging with both file and console handlers"""
+    try:
+        # Create logs directory if it doesn't exist
+        log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        
+        # Create a custom formatter
+        log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        formatter = logging.Formatter(log_format)
+        
+        # Get root logger and clear any existing handlers
+        logger = logging.getLogger()
+        for handler in logger.handlers[:]:
+            logger.removeHandler(handler)
+        logger.setLevel(logging.DEBUG)
+        
+        # Add console handler
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+        
+        # Add file handler
+        log_file = os.path.join(log_dir, f'bot_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+        
+        # Set specific log levels for noisy libraries
+        logging.getLogger('asyncio').setLevel(logging.WARNING)
+        logging.getLogger('websockets').setLevel(logging.WARNING)
+        logging.getLogger('engineio.client').setLevel(logging.INFO)
+        logging.getLogger('socketio.client').setLevel(logging.INFO)
+        
+        logger.info(f"Logging to {log_file}")
+        return logger
+    except Exception as e:
+        print(f"Failed to setup logging: {e}")
+        logging.basicConfig(level=logging.INFO)
+        return logging.getLogger()
+
 async def main():
     """Main entry point"""
     # Setup logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+    logger = setup_logging()
     
     # Check configuration
     if not config.API_KEY or not config.API_SECRET:
